@@ -202,6 +202,61 @@ class AustralisPanelController
         }
 
         this.echelonUpdates();
+
+        // Set up event listeners for buttons that used oncommand
+        // Sync status button
+        let fxaStatusButton = this.mainView.querySelector("#PanelUI-fxa-status");
+        if (fxaStatusButton) {
+            fxaStatusButton.addEventListener("click", (event) => {
+                if (event.button === 0) {
+                    this.onSyncCommand();
+                }
+            });
+        }
+
+        // Sync icon button
+        let fxaIconButton = this.mainView.querySelector("#PanelUI-fxa-icon");
+        if (fxaIconButton) {
+            fxaIconButton.addEventListener("command", () => {
+                if (window.gSync) {
+                    window.gSync.doSync();
+                }
+            });
+        }
+
+        // Customize button
+        let customizeButton = this.mainView.querySelector("#PanelUI-customize");
+        if (customizeButton) {
+            customizeButton.addEventListener("command", () => {
+                if (window.gCustomizeMode && window.gCustomizeMode.toggle) {
+                    window.gCustomizeMode.toggle();
+                }
+            });
+        }
+
+        // History sidebar button
+        let historySidebarButton = document.getElementById("appMenuViewHistorySidebar");
+        if (historySidebarButton) {
+            historySidebarButton.addEventListener("command", () => {
+                if (window.SidebarUI) {
+                    window.SidebarUI.toggle('viewHistorySidebar');
+                }
+                this.hide();
+            });
+        }
+
+        // History "Show All" button
+        let historyMoreButton = document.getElementById("PanelUI-historyMore");
+        if (historyMoreButton) {
+            historyMoreButton.addEventListener("command", () => {
+                if (window.PlacesCommandHook) {
+                    window.PlacesCommandHook.showPlacesOrganizer('History');
+                }
+                if (window.CustomizableUI) {
+                    window.CustomizableUI.hidePanelForNode(historyMoreButton);
+                }
+            });
+        }
     }
 
     renderPanel()
@@ -255,9 +310,7 @@ class AustralisPanelController
                                 "signedinTooltiptext": str("fxa_signed_in_tooltip"),
                                 "tooltiptext": str("fxa_signed_in_tooltip"),
                                 "errorlabel": str("fxa_sign_in_error_label"),
-                                "unverifiedlabel": str("fxa_unverified_label"),
-                                // this function is unimplemented now:
-                                "onclick": "if (event.which == 1) g_echelonAustralisPanel.onSyncCommand()"
+                                "unverifiedlabel": str("fxa_unverified_label")
                             }, [
                                 elm("xul:image", { "id": "PanelUI-fxa-avatar" }),
                                 elm("xul:toolbarbutton", {
@@ -269,7 +322,6 @@ class AustralisPanelController
                             elm("xul:toolbarseparator"),
                             elm("xul:toolbarbutton", {
                                 "id": "PanelUI-fxa-icon",
-                                "oncommand": "gSync.doSync();",
                                 "closemenu": "none"
                             }, [
                                 // elm("xul:observes", {
@@ -290,8 +342,7 @@ class AustralisPanelController
                                 "tooltip": str("appmenu_customize.tooltip"),
                                 "exitLabel": str("appmenu_customize.exit_label"),
                                 "exitTooltiptext": str("appmenu_customize.exit_tooltip"),
-                                "closemenu": "none",
-                                "oncommand": "gCustomizeMode.toggle;" // Removed from Firefox for whatever reason, so this will never work.
+                                "closemenu": "none"
                             }),
                             elm("xul:toolbarseparator"),
                             elm("xul:toolbarbutton", {
@@ -334,8 +385,7 @@ class AustralisPanelController
                                 "label": str("appmenu_history.view_sidebar_label"),
                                 "type": "checkbox",
                                 "class": "subviewbutton",
-                                "key": "key_gotoHistory",
-                                "oncommand": "SidebarUI.toggle('viewHistorySidebar');g_echelonAustralisPanel.hide();"
+                                "key": "key_gotoHistory"
                             }, [
                                 elm("xul:observes", {
                                     "element": "viewHistorySidebar",
@@ -379,8 +429,7 @@ class AustralisPanelController
                         elm("xul:toolbarbutton", {
                             "id": "PanelUI-historyMore",
                             "class": "panel-subview-footer subviewbutton",
-                            "label": str("appmenu_history.show_all_label"),
-                            "oncommand": "PlacesCommandHook.showPlacesOrganizer('History'); CustomizableUI.hidePanelForNode(this);"
+                            "label": str("appmenu_history.show_all_label")
                         })
                     ]),
                     elm("xul:panelview", {
@@ -887,12 +936,12 @@ class AustralisPanelController
     {
         // Call global menu setup function
         buildHelpMenu();
-        
+
         let helpMenu = document.getElementById("menu_HelpPopup");
         let helpView = document.getElementById("PanelUI-helpView");
         let items = helpView.querySelector("vbox");
         let attrs = [
-            "oncommand", "onclick", "label", "key", "disabled"
+            "onclick", "label", "key", "disabled"
         ];
 
         // Remove all buttons from the view
@@ -906,6 +955,7 @@ class AustralisPanelController
             Array.from(helpMenu.querySelectorAll("menuitem"))
         );
         let fragment = document.createDocumentFragment();
+        let doc = helpView.ownerDocument;
 
         for (const node of menuItems)
         {
@@ -921,6 +971,33 @@ class AustralisPanelController
                     continue;
 
                 button.setAttribute(attrName, node.getAttribute(attrName));
+            }
+
+            // Handle oncommand by adding event listener instead of copying attribute
+            if (node.hasAttribute("oncommand"))
+            {
+                button.addEventListener("command", event => {
+                    let newEvent = doc.createEvent("XULCommandEvent");
+                    newEvent.initCommandEvent(
+                        event.type, event.bubbles, event.cancelable, event.view,
+                        event.detail, event.ctrlKey, event.altKey, event.shiftKey,
+                        event.metaKey, event.sourceEvent, null
+                    );
+                    node.dispatchEvent(newEvent);
+                });
+            }
+            else
+            {
+                // If no oncommand attribute, still add a listener to dispatch to the node
+                button.addEventListener("command", event => {
+                    let newEvent = doc.createEvent("XULCommandEvent");
+                    newEvent.initCommandEvent(
+                        event.type, event.bubbles, event.cancelable, event.view,
+                        event.detail, event.ctrlKey, event.altKey, event.shiftKey,
+                        event.metaKey, event.sourceEvent, null
+                    );
+                    node.dispatchEvent(newEvent);
+                });
             }
 
             button.setAttribute("class", "subviewbutton");
